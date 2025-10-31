@@ -1,0 +1,505 @@
+<!-- federation_app/templates/federation_app/predict.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>模型预测 - 联邦学习平台</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {
+            --primary: #00f3ff;
+            --secondary: #7e42ff;
+            --dark-bg: #0a0e17;
+            --darker-bg: #050811;
+            --card-bg: rgba(16, 22, 36, 0.8);
+            --text: #e0e0ff;
+            --text-secondary: #a0a0c0;
+            --success: #00ff9d;
+            --warning: #ffb300;
+            --error: #ff3d71;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--text);
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(28, 58, 173, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(126, 66, 255, 0.1) 0%, transparent 20%),
+                linear-gradient(to bottom, var(--darker-bg), var(--dark-bg));
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(10, 14, 23, 0.7);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 0 40px rgba(0, 243, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 243, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+
+        h1 {
+            color: var(--primary);
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5rem;
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+            position: relative;
+        }
+
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+
+        h2, h3 {
+            color: var(--primary);
+            margin: 30px 0 20px;
+            font-weight: 400;
+            position: relative;
+            padding-left: 15px;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+        }
+
+        h3::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+            margin-right: 10px;
+            box-shadow: 0 0 8px var(--primary);
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(0, 243, 255, 0.3);
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(5, 8, 17, 0.5);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+
+        .upload-area.dragover {
+            border-color: var(--primary);
+            background-color: rgba(0, 243, 255, 0.05);
+        }
+
+        .result-area {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 243, 255, 0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .hidden { display: none; }
+
+        .model-select {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: rgba(5, 8, 17, 0.5);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 243, 255, 0.1);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        select {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(5, 8, 17, 0.7);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+        }
+
+        select option {
+            background: var(--card-bg);
+            color: var(--text);
+            padding: 10px;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            margin: 5px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(126, 66, 255, 0.4);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, var(--warning), #ff8c00);
+            color: white;
+        }
+
+        #selectedFile {
+            padding: 15px;
+            background: rgba(5, 8, 17, 0.5);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 243, 255, 0.1);
+            margin: 20px 0;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 30px;
+            color: var(--primary);
+        }
+
+        ul {
+            margin: 15px 0 15px 20px;
+        }
+
+        li {
+            margin: 8px 0;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        li:hover {
+            background: rgba(0, 243, 255, 0.05);
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 30px;
+            color: var(--primary);
+            text-decoration: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            color: var(--secondary);
+            background: rgba(0, 243, 255, 0.1);
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(5, 8, 17, 0.5);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--secondary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ 模型预测</h1>
+
+        <div class="model-select">
+            <label for="taskSelect">选择任务模型:</label>
+            <select id="taskSelect" style="padding: 8px; margin-left: 10px; width: 300px;">
+                <option value="">-- 请选择任务 --</option>
+            </select>
+        </div>
+
+        <div class="upload-area" id="uploadArea">
+            <p>📁 拖拽图像文件到这里，或点击选择文件</p>
+            <p style="font-size: 12px; color: var(--text-secondary);">支持格式: JPG, JPEG, PNG, BMP, TIFF</p>
+            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.bmp,.tiff" style="display: none;">
+        </div>
+
+        <div id="selectedFile" class="hidden">
+            <p>✅ 已选择文件: <strong id="fileName"></strong></p>
+            <button class="btn btn-primary" onclick="predictImage()">开始预测</button>
+            <button class="btn btn-secondary" onclick="clearSelection()">重新选择</button>
+        </div>
+
+        <div id="loading" class="hidden">
+            <p>⏳ 正在处理中，请稍候...</p>
+        </div>
+
+        <div id="resultArea" class="result-area hidden">
+            <h3>🎯 预测结果</h3>
+            <div id="predictionResult"></div>
+        </div>
+
+        <a href="/dashboard/" class="back-link">← 返回控制台</a>
+    </div>
+
+    <script>
+        // 页面加载时获取可用模型
+        window.addEventListener('DOMContentLoaded', function() {
+            loadAvailableModels();
+            setupDragAndDrop();
+
+            // 检查是否有预选择的任务ID
+            const selectedTaskId = sessionStorage.getItem('selectedTaskId');
+            if (selectedTaskId) {
+                // 等待模型加载完成后再设置选中状态
+                setTimeout(() => {
+                    const select = document.getElementById('taskSelect');
+                    for (let i = 0; i < select.options.length; i++) {
+                        if (select.options[i].value === selectedTaskId) {
+                            select.selectedIndex = i;
+                            break;
+                        }
+                    }
+                    // 清除sessionStorage中的值
+                    sessionStorage.removeItem('selectedTaskId');
+                }, 500);
+            }
+        });
+
+        function loadAvailableModels() {
+            fetch('/api/models/available/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const select = document.getElementById('taskSelect');
+                        select.innerHTML = '<option value="">-- 请选择任务 --</option>';
+
+                        data.models.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.task_id;
+                            option.textContent = `${model.task_name} (训练轮次: ${model.epoch})`;
+                            select.appendChild(option);
+                        });
+                    } else {
+                        alert('加载模型列表失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('加载模型列表失败:', error);
+                    alert('加载模型列表失败，请检查网络连接');
+                });
+        }
+
+        function setupDragAndDrop() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', function() {
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+
+                if (e.dataTransfer.files.length > 0) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    handleFileSelect(this.files[0]);
+                }
+            });
+
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+        }
+
+        function handleFileSelect(file) {
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff'];
+
+            if (!allowedTypes.includes(file.type)) {
+                alert('请选择有效的图像文件 (JPEG, PNG, BMP, TIFF)');
+                return;
+            }
+
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('selectedFile').classList.remove('hidden');
+            document.getElementById('uploadArea').classList.add('hidden');
+
+            // 存储文件引用
+            window.selectedFile = file;
+        }
+
+        function clearSelection() {
+            document.getElementById('selectedFile').classList.add('hidden');
+            document.getElementById('uploadArea').classList.remove('hidden');
+            document.getElementById('fileInput').value = '';
+            window.selectedFile = null;
+        }
+
+        function predictImage() {
+            const taskId = document.getElementById('taskSelect').value;
+            if (!taskId) {
+                alert('请选择任务模型');
+                return;
+            }
+
+            if (!window.selectedFile) {
+                alert('请选择图像文件');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', window.selectedFile);
+            formData.append('task_id', taskId);
+            formData.append('dataset_type', 'CIFAR10');
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('resultArea').classList.add('hidden');
+
+            fetch('/api/predict/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loading').classList.add('hidden');
+
+                if (data.success) {
+                    displayPredictionResult(data.prediction);
+                } else {
+                    alert('预测失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                document.getElementById('loading').classList.add('hidden');
+                alert('请求失败: ' + error);
+            });
+        }
+
+        function displayPredictionResult(result) {
+            const resultDiv = document.getElementById('predictionResult');
+
+            let html = `
+                <p><strong>预测类别:</strong> ${result.class_name} (ID: ${result.predicted_class})</p>
+                <p><strong>置信度:</strong> ${(result.confidence * 100).toFixed(2)}%</p>
+                <p><strong>所有类别概率:</strong></p>
+                <ul>
+            `;
+
+            // 按概率排序
+            const sortedProbs = Object.entries(result.all_probabilities)
+                .sort((a, b) => b[1] - a[1]);
+
+            sortedProbs.forEach(([classId, prob]) => {
+                const className = getClassName(parseInt(classId));
+                const percentage = (prob * 100).toFixed(2);
+                const isTop = sortedProbs[0][0] === classId;
+                const style = isTop ? 'style="color: var(--success); font-weight: bold;"' : '';
+                html += `<li ${style}>${className}: ${percentage}%</li>`;
+            });
+
+            html += '</ul>';
+            resultDiv.innerHTML = html;
+            document.getElementById('resultArea').classList.remove('hidden');
+        }
+
+        function getClassName(classId) {
+            // CIFAR-10 类别名称
+            const classes = [
+                '飞机', '汽车', '鸟', '猫', '鹿',
+                '狗', '青蛙', '马', '船', '卡车'
+            ];
+            return classes[classId] || `类别 ${classId}`;
+        }
+    </script>
+</body>
+</html>

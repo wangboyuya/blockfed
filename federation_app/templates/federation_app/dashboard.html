@@ -579,6 +579,7 @@
                 <button class="tab-button active" data-tab="create">创建联邦任务</button>
                 <button class="tab-button" data-tab="join">加入联邦任务</button>
                 <button class="tab-button" data-tab="leave">退出联邦任务</button>
+                <button class="tab-button" id="predictBtn">模型预测</button>
             </div>
             
             <div class="control-panel">
@@ -665,6 +666,29 @@
                         <input type="number" id="leaveUserId" placeholder="输入用户ID">
                     </div>
                     <button onclick="leaveTask()" class="warning">退出联邦任务</button>
+                </div>
+
+                <div class="control-section" id="predict-section">
+                    <h3>模型预测</h3>
+                    <div style="text-align: center; padding: 40px 0;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">🔮</div>
+                        <h4 style="color: var(--primary); margin-bottom: 15px;">使用训练好的模型进行图像分类</h4>
+                        <p style="color: var(--text-secondary); margin-bottom: 30px; line-height: 1.6;">
+                            上传图像并使用已训练的联邦学习模型进行预测<br>
+                            支持 CIFAR-10 和 MNIST 数据集的分类任务
+                        </p>
+                        <button onclick="goToPredictionPage()" style="padding: 15px 40px; font-size: 1.1rem;">
+                            前往预测页面
+                        </button>
+                    </div>
+
+                    <!-- 快速任务选择 -->
+                    <div class="form-group" style="margin-top: 30px;">
+                        <label for="quickTaskSelect">快速选择任务:</label>
+                        <select id="quickTaskSelect" onchange="quickSelectTask(this.value)">
+                            <option value="">-- 选择任务快速跳转 --</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1200,6 +1224,85 @@
                 // 使用 keepalive 确保请求在页面卸载后仍然发送
                 keepalive: true
             }).catch(err => console.error('清空日志失败:', err));
+        });
+
+        // 在现有的 JavaScript 代码中添加
+
+        // 标签切换功能 - 修改以支持预测按钮
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', function() {
+                // 移除所有按钮的active类
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+
+                // 添加active类到当前按钮
+                this.classList.add('active');
+
+                // 隐藏所有控制部分
+                document.querySelectorAll('.control-section').forEach(section => {
+                    section.classList.remove('active');
+                });
+
+                // 显示对应的控制部分
+                const tabId = this.getAttribute('data-tab');
+                if (tabId) {
+                    document.getElementById(`${tabId}-section`).classList.add('active');
+                } else if (this.id === 'predictBtn') {
+                    document.getElementById('predict-section').classList.add('active');
+                    loadQuickTaskSelect(); // 加载快速选择下拉框
+                }
+            });
+        });
+
+        // 跳转到预测页面
+        function goToPredictionPage() {
+            window.location.href = '/predict/';
+        }
+
+        // 快速选择任务并跳转
+        function quickSelectTask(taskId) {
+            if (taskId) {
+                // 保存选择的任务ID到sessionStorage，预测页面可以读取
+                sessionStorage.setItem('selectedTaskId', taskId);
+                window.location.href = '/predict/';
+            }
+        }
+
+        // 加载快速选择下拉框的任务列表
+        async function loadQuickTaskSelect() {
+            try {
+                const response = await fetch('/api/models/available/');
+                const result = await response.json();
+
+                if (result.success) {
+                    const select = document.getElementById('quickTaskSelect');
+                    select.innerHTML = '<option value="">-- 选择任务快速跳转 --</option>';
+
+                    result.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.task_id;
+                        option.textContent = `${model.task_name} (训练轮次: ${model.epoch})`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载任务列表失败:', error);
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStatus();
+            loadLogs();
+            setInterval(loadStatus, 10000);
+            setInterval(loadLogs, 10000);
+
+            // 检查URL参数，如果有predict参数则自动跳转到预测标签
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('tab') === 'predict') {
+                document.getElementById('predictBtn').click();
+            }
         });
     </script>
 </body>

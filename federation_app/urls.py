@@ -12,4 +12,10 @@ urlpatterns = [
     path('api/tasks/<str:task_id>/status/', views.get_task_status, name='get_task_status'),
     path('api/tasks/accuracy-history/', views.get_accuracy_history, name='get_accuracy_history'),
     path('api/tasks/logs/', views.get_logs, name='get_logs'),
+
+# 模型预测相关路由
+    path('api/predict/', views.predict_image, name='predict_image'),
+    path('api/models/available/', views.get_available_models, name='get_available_models'),
+    path('api/models/<str:task_id>/info/', views.get_model_info, name='get_model_info'),
+    path('predict/', views.prediction_page, name='prediction_page'),
 ]
