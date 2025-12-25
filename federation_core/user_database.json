@@ -14,42 +14,34 @@
     },
     "1": {
       "user_id": 1,
-      "user_name": "user_1",
-      "virtual_coins": 100,
+      "user_name": "wby",
+      "virtual_coins": 90,
       "assigned_data_indices": [
-        241,
-        233,
-        273,
-        356,
-        131
+        0
       ],
-      "data_block_count": 5
+      "data_block_count": 1
     },
     "2": {
       "user_id": 2,
-      "user_name": "user_2",
-      "virtual_coins": 100,
+      "user_name": "yyh",
+      "virtual_coins": 10170,
       "assigned_data_indices": [
-        305,
-        187
+        9,
+        6,
+        3
       ],
-      "data_block_count": 2
+      "data_block_count": 3
     },
     "3": {
       "user_id": 3,
-      "user_name": "user_3",
-      "virtual_coins": 100,
+      "user_name": "testuser_demo",
+      "virtual_coins": 98,
       "assigned_data_indices": [
-        464,
-        162,
-        309,
-        182,
-        109,
-        283,
-        264,
-        134
+        38,
+        84,
+        94
       ],
-      "data_block_count": 8
+      "data_block_count": 3
     },
     "4": {
       "user_id": 4,

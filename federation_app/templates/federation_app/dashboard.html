@@ -25,63 +25,51 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: var(--dark-bg);
+            background: linear-gradient(135deg, var(--darker-bg) 0%, var(--dark-bg) 100%);
             color: var(--text);
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(28, 58, 173, 0.1) 0%, transparent 20%),
-                radial-gradient(circle at 90% 80%, rgba(126, 66, 255, 0.1) 0%, transparent 20%),
-                linear-gradient(to bottom, var(--darker-bg), var(--dark-bg));
             min-height: 100vh;
         }
-        
+
+        .header {
+            background: var(--card-bg);
+            border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: var(--primary);
+            font-size: 24px;
+            margin: 0;
+        }
+
+        .nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        .nav a {
+            color: var(--text);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .nav a:hover {
+            background: rgba(0, 243, 255, 0.1);
+            color: var(--primary);
+        }
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            background: rgba(10, 14, 23, 0.7);
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 0 40px rgba(0, 243, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(0, 243, 255, 0.1);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--primary), transparent);
-        }
-        
-        h1 {
-            color: var(--primary);
-            text-align: center;
-            margin-bottom: 40px;
-            font-size: 2.5rem;
-            font-weight: 300;
-            letter-spacing: 2px;
-            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
-            position: relative;
-        }
-        
-        h1::after {
-            content: '';
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100px;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            padding: 40px 20px;
         }
         
         h2 {
@@ -419,9 +407,46 @@
         
         .task-actions {
             display: flex;
-            gap: 10px;
+            gap: 6px;
             margin-top: 10px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;  /* 强制不换行 */
+            overflow-x: auto;  /* 如果真的放不下，允许横向滚动 */
+        }
+
+        /* 任务卡片中的按钮统一样式 - 不覆盖背景色 */
+        .task-actions button {
+            padding: 6px 10px !important;
+            font-size: 0.8rem !important;
+            white-space: nowrap;  /* 文字不换行 */
+            flex-shrink: 0;  /* 不收缩 */
+            margin-top: 0 !important;  /* 移除额外的 margin */
+            line-height: 1.5;  /* 统一行高 */
+            height: auto;  /* 自动高度 */
+            display: inline-flex;  /* 使用 inline-flex 对齐 */
+            align-items: center;  /* 垂直居中 */
+            justify-content: center;  /* 水平居中 */
+            /* 不设置 background，让各按钮类自己的渐变生效 */
+        }
+
+        /* 任务卡片中各类按钮的渐变背景 - 使用更高优先级 */
+        .task-card .task-actions button.chart-btn {
+            background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
+        }
+
+        .task-card .task-actions button.success {
+            background: linear-gradient(135deg, var(--success), #00b37a) !important;
+        }
+
+        .task-card .task-actions button.warning {
+            background: linear-gradient(135deg, var(--warning), #ff8c00) !important;
+        }
+
+        .task-card .task-actions button.delete-btn {
+            background: linear-gradient(135deg, var(--error), #cc2b5e) !important;
+        }
+
+        .task-card .task-actions button.delete-btn:disabled {
+            background: linear-gradient(135deg, #6c757d, #5a6268) !important;
         }
         
         .logs-panel {
@@ -569,11 +594,39 @@
     </style>
 </head>
 <body>
+    <div class="header">
+        <h1>
+            <svg width="32" height="32" viewBox="0 0 200 200" style="vertical-align: middle; margin-right: 10px;">
+                <!-- 外圆环 -->
+                <circle cx="100" cy="100" r="90" fill="none" stroke="#0066FF" stroke-width="12" stroke-dasharray="70 30" stroke-linecap="round"/>
+
+                <!-- 中心六边形 -->
+                <path d="M 100 35 L 125 50 L 125 80 L 100 95 L 75 80 L 75 50 Z" fill="#17A2B8" stroke="#17A2B8" stroke-width="2"/>
+                <circle cx="100" cy="65" r="12" fill="white"/>
+
+                <!-- 左下六边形 -->
+                <path d="M 60 110 L 85 125 L 85 155 L 60 170 L 35 155 L 35 125 Z" fill="#17A2B8" stroke="#17A2B8" stroke-width="2"/>
+                <circle cx="60" cy="140" r="12" fill="white"/>
+
+                <!-- 右下六边形 -->
+                <path d="M 140 110 L 165 125 L 165 155 L 140 170 L 115 155 L 115 125 Z" fill="#17A2B8" stroke="#17A2B8" stroke-width="2"/>
+                <circle cx="140" cy="140" r="12" fill="white"/>
+
+                <!-- 连接线 -->
+                <line x1="100" y1="95" x2="60" y2="110" stroke="#17A2B8" stroke-width="4"/>
+                <line x1="100" y1="95" x2="140" y2="110" stroke="#17A2B8" stroke-width="4"/>
+            </svg>
+            联邦学习任务管理平台
+        </h1>
+        <div class="nav">
+            <a href="/profile/">个人中心</a>
+            <a href="#" onclick="logout()">登出</a>
+        </div>
+    </div>
+
     <div class="container">
-        <h1>联邦学习任务管理平台</h1>
-        
         <div id="messageArea"></div>
-        
+
         <div class="dashboard">
             <div class="tab-buttons">
                 <button class="tab-button active" data-tab="create">创建联邦任务</button>
@@ -640,32 +693,26 @@
                 
                 <div class="control-section" id="join-section">
                     <h3>加入联邦任务</h3>
-                    <div class="form-group">
-                        <label for="joinTaskId">任务编号:</label>
-                        <input type="text" id="joinTaskId" placeholder="输入要加入的任务编号">
+                    <p style="color: var(--text-secondary); margin-bottom: 20px;">选择一个任务加入训练</p>
+
+                    <div id="joinTasksGrid" class="status-panel" style="margin-bottom: 0;">
+                        <!-- 可加入的任务卡片将通过JavaScript动态加载 -->
+                        <div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">
+                            加载中...
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="userId">用户ID:</label>
-                        <input type="number" id="userId" placeholder="输入用户ID">
-                    </div>
-                    <div class="form-group">
-                        <label for="userName">用户名:</label>
-                        <input type="text" id="userName" placeholder="输入用户名（可选）">
-                    </div>
-                    <button onclick="joinTask()" class="success">加入联邦任务</button>
                 </div>
                 
                 <div class="control-section" id="leave-section">
                     <h3>退出联邦任务</h3>
-                    <div class="form-group">
-                        <label for="leaveTaskId">任务编号:</label>
-                        <input type="text" id="leaveTaskId" placeholder="输入要退出的任务编号">
+                    <p style="color: var(--text-secondary); margin-bottom: 20px;">选择要退出的任务</p>
+
+                    <div id="leaveTasksGrid" class="status-panel" style="margin-bottom: 0;">
+                        <!-- 已参与的任务卡片将通过JavaScript动态加载 -->
+                        <div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">
+                            加载中...
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="leaveUserId">用户ID:</label>
-                        <input type="number" id="leaveUserId" placeholder="输入用户ID">
-                    </div>
-                    <button onclick="leaveTask()" class="warning">退出联邦任务</button>
                 </div>
 
                 <div class="control-section" id="predict-section">
@@ -722,18 +769,28 @@
                 document.querySelectorAll('.tab-button').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                
+
                 // 添加active类到当前按钮
                 this.classList.add('active');
-                
+
                 // 隐藏所有控制部分
                 document.querySelectorAll('.control-section').forEach(section => {
                     section.classList.remove('active');
                 });
-                
+
                 // 显示对应的控制部分
                 const tabId = this.getAttribute('data-tab');
                 document.getElementById(`${tabId}-section`).classList.add('active');
+
+                // 如果切换到加入任务标签，加载可加入的任务
+                if (tabId === 'join') {
+                    loadJoinableTasks();
+                }
+
+                // 如果切换到退出任务标签，加载已参与的任务
+                if (tabId === 'leave') {
+                    loadParticipatedTasks();
+                }
             });
         });
 
@@ -840,12 +897,12 @@
             const taskId = document.getElementById('joinTaskId').value;
             const userId = document.getElementById('userId').value;
             const userName = document.getElementById('userName').value || `用户${userId}`;
-            
+
             if (!taskId || !userId) {
                 showMessage('任务编号和用户ID不能为空', 'error');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/tasks/join/', {
                     method: 'POST',
@@ -858,7 +915,7 @@
                         user_name: userName
                     })
                 });
-                
+
                 const result = await response.json();
                 if (result.success) {
                     showMessage(result.message);
@@ -872,6 +929,182 @@
                 }
             } catch (error) {
                 showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+
+        // 新增：加入任务的函数（从卡片调用）
+        async function joinTaskFromCard(taskId) {
+            // 这里简化处理，使用当前登录用户的信息
+            // 实际应该从session或API获取当前用户信息
+            try {
+                const response = await fetch('/api/tasks/join/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message);
+                    loadJoinableTasks();  // 刷新可加入任务列表
+                    loadStatus();
+                    loadLogs();
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+
+        // 新增：加载可加入的任务列表
+        async function loadJoinableTasks() {
+            try {
+                // 同时获取所有任务和用户参与的任务
+                const [tasksResponse, participationsResponse] = await Promise.all([
+                    fetch('/api/tasks/status/'),
+                    fetch('/api/user/participations/')
+                ]);
+
+                const tasksResult = await tasksResponse.json();
+                const participationsResult = await participationsResponse.json();
+
+                if (tasksResult.success) {
+                    const joinTasksGrid = document.getElementById('joinTasksGrid');
+                    joinTasksGrid.innerHTML = '';
+
+                    // 获取用户已参与的任务ID列表（包括活跃和非活跃的）
+                    let joinedTaskIds = [];
+                    if (participationsResult.success) {
+                        joinedTaskIds = participationsResult.participations
+                            .filter(p => p.is_active)  // 只过滤活跃的参与
+                            .map(p => p.task_id);
+                    }
+
+                    // 筛选可以加入的任务（排除已完成的任务和已参与的任务）
+                    const joinableTasks = tasksResult.tasks.filter(task =>
+                        task.status !== 'completed' && !joinedTaskIds.includes(task.task_id)
+                    );
+
+                    if (joinableTasks.length === 0) {
+                        joinTasksGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); padding: 40px;">暂无可加入的任务</div>';
+                        return;
+                    }
+
+                    joinableTasks.forEach(task => {
+                        const statusClass = task.status || 'stopped';
+
+                        // 将模型架构缩写转换为完整名称
+                        const modelNameMap = {
+                            'r8': 'ResNet8',
+                            'r18': 'ResNet18',
+                            'r34': 'ResNet34',
+                            'CNN': 'CNN'
+                        };
+                        const modelFullName = modelNameMap[task.model_architecture] || task.model_architecture;
+
+                        const card = `
+                            <div class="task-card ${statusClass}" style="max-width: 400px;">
+                                <div class="task-header">
+                                    <span class="task-id">${task.task_id}</span>
+                                    <span class="task-status status-${statusClass}">
+                                        ${statusClass === 'running' ? '运行中' :
+                                          statusClass === 'paused' ? '已暂停' : '已停止'}
+                                    </span>
+                                </div>
+                                <div class="task-info">
+                                    <div><span>任务名称:</span> <span>${task.task_name || 'N/A'}</span></div>
+                                    <div><span>当前轮次:</span> <span>${task.current_epoch || 0}/${task.total_epochs || 0}</span></div>
+                                    <div><span>活跃用户:</span> <span>${task.active_users || 0}</span></div>
+                                    <div><span>数据集:</span> <span>${task.dataset || 'N/A'}</span></div>
+                                    <div><span>模型:</span> <span>${modelFullName}</span></div>
+                                </div>
+                                <div class="task-actions" style="margin-top: 15px;">
+                                    <button class="success" onclick="joinTaskFromCard('${task.task_id}')" style="width: 100%;">
+                                        加入此任务
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        joinTasksGrid.innerHTML += card;
+                    });
+                }
+            } catch (error) {
+                console.error('加载可加入任务失败:', error);
+                document.getElementById('joinTasksGrid').innerHTML =
+                    '<div style="grid-column: 1/-1; text-align: center; color: var(--error);">加载失败</div>';
+            }
+        }
+
+        // 新增：加载已参与的任务列表
+        async function loadParticipatedTasks() {
+            try {
+                const response = await fetch('/api/user/participations/');
+                const result = await response.json();
+
+                if (result.success) {
+                    const leaveTasksGrid = document.getElementById('leaveTasksGrid');
+                    leaveTasksGrid.innerHTML = '';
+
+                    // 筛选活跃的参与任务
+                    const activeTasks = result.participations.filter(p => p.is_active);
+
+                    if (activeTasks.length === 0) {
+                        leaveTasksGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); padding: 40px;">您还未参与任何任务</div>';
+                        return;
+                    }
+
+                    activeTasks.forEach(task => {
+                        // 根据进度判断状态
+                        let statusClass = 'running';
+                        let statusText = '进行中';
+                        if (task.current_epoch >= task.total_epochs) {
+                            statusClass = 'completed';
+                            statusText = '已完成';
+                        }
+
+                        // 将模型架构缩写转换为完整名称
+                        const modelNameMap = {
+                            'r8': 'ResNet8',
+                            'r18': 'ResNet18',
+                            'r34': 'ResNet34',
+                            'CNN': 'CNN'
+                        };
+                        const modelFullName = modelNameMap[task.model_architecture] || task.model_architecture;
+
+                        const card = `
+                            <div class="task-card ${statusClass}" style="max-width: 400px;">
+                                <div class="task-header">
+                                    <span class="task-id">${task.task_id}</span>
+                                    <span class="task-status status-${statusClass}">
+                                        ${statusText}
+                                    </span>
+                                </div>
+                                <div class="task-info">
+                                    <div><span>任务名称:</span> <span>${task.task_name}</span></div>
+                                    <div><span>进度:</span> <span>${task.current_epoch}/${task.total_epochs}</span></div>
+                                    <div><span>数据集:</span> <span>${task.dataset || 'N/A'}</span></div>
+                                    <div><span>模型:</span> <span>${modelFullName}</span></div>
+                                    <div><span>加入时间:</span> <span>${task.joined_at}</span></div>
+                                </div>
+                                <div class="task-actions" style="margin-top: 15px;">
+                                    <button class="warning" onclick="leaveTaskFromCard('${task.task_id}')" style="width: 100%;">
+                                        退出此任务
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        leaveTasksGrid.innerHTML += card;
+                    });
+                }
+            } catch (error) {
+                console.error('加载已参与任务失败:', error);
+                document.getElementById('leaveTasksGrid').innerHTML =
+                    '<div style="grid-column: 1/-1; text-align: center; color: var(--error);">加载失败</div>';
             }
         }
 
@@ -915,7 +1148,7 @@
             if (!confirm(`确定要删除任务 ${taskId} 吗？此操作将永久删除该任务的所有数据，包括日志和准确度记录。`)) {
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/tasks/delete/', {
                     method: 'POST',
@@ -926,12 +1159,14 @@
                         task_id: taskId
                     })
                 });
-                
+
                 const result = await response.json();
                 if (result.success) {
                     showMessage(result.message);
                     loadStatus();
                     loadLogs();
+                    loadJoinableTasks();  // 刷新可加入任务列表
+                    loadParticipatedTasks();  // 刷新已参与任务列表
                 } else {
                     showMessage(result.message, 'error');
                 }
@@ -1104,39 +1339,92 @@
                 myChart.resize();
             });
         }
+
+        // 全局变量存储当前用户ID
+        let currentUserId = null;
+
+        // 获取当前用户信息
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch('/api/auth/profile/');
+                const result = await response.json();
+                if (result.success) {
+                    currentUserId = result.user.id;
+                }
+            } catch (error) {
+                console.error('获取用户信息失败:', error);
+            }
+        }
+
         async function loadStatus() {
             try {
                 const response = await fetch('/api/tasks/status/');
                 const result = await response.json();
-                
+
                 if (result.success) {
                     const statusPanel = document.getElementById('statusPanel');
                     statusPanel.innerHTML = '';
-                    
+
                     if (result.tasks.length === 0) {
                         statusPanel.innerHTML = '<div class="task-card">暂无联邦任务</div>';
                         return;
                     }
-                    
+
                     result.tasks.forEach(task => {
                         // 直接使用任务状态，无需额外计算
                         const statusClass = task.status || 'stopped';
-                        
+
                         // 正确显示训练状态
                         let trainingStatus = '停止';
                         if (task.is_running) {
                             trainingStatus = task.training_paused ? '暂停' : '进行中';
                         }
-                        
+
                         // 检查任务是否正在运行（内存中）
                         const isRunning = task.is_running && !task.training_paused;
-                        
+
+                        // 检查是否是任务创建者
+                        const isCreator = currentUserId && task.creator_id && currentUserId === task.creator_id;
+
+                        // 检查任务是否已停止且可以重启
+                        const canRestart = isCreator && task.status === 'stopped';
+
+                        // 按钮HTML
+                        let buttonsHTML = `
+                            <button class="chart-btn" onclick="showAccuracyChart('${task.task_id}', '${task.task_name}')">
+                                查看准确度
+                            </button>
+                        `;
+
+                        // 只有创建者才能看到开始任务和删除按钮
+                        if (isCreator) {
+                            if (canRestart) {
+                                buttonsHTML += `
+                                    <button class="success" onclick="restartTask('${task.task_id}')">
+                                        开始任务
+                                    </button>
+                                `;
+                            }
+                            buttonsHTML += `
+                                <button class="delete-btn" onclick="deleteTask('${task.task_id}')" ${isRunning ? 'disabled' : ''}>
+                                    ${isRunning ? '运行中不可删除' : '删除任务'}
+                                </button>
+                            `;
+                        }
+
+                        // 所有用户都可以退出任务
+                        buttonsHTML += `
+                            <button class="warning" onclick="leaveTaskFromCard('${task.task_id}')">
+                                退出任务
+                            </button>
+                        `;
+
                         const card = `
                             <div class="task-card ${statusClass}">
                                 <div class="task-header">
                                     <span class="task-id">${task.task_id}</span>
                                     <span class="task-status status-${statusClass}">
-                                        ${statusClass === 'running' ? '运行中' : 
+                                        ${statusClass === 'running' ? '运行中' :
                                         statusClass === 'paused' ? '已暂停' : '已停止'}
                                     </span>
                                 </div>
@@ -1148,12 +1436,7 @@
                                     <div><span>创建时间:</span> <span>${task.created_at ? new Date(task.created_at).toLocaleString() : 'N/A'}</span></div>
                                 </div>
                                 <div class="task-actions">
-                                    <button class="chart-btn" onclick="showAccuracyChart('${task.task_id}', '${task.task_name}')">
-                                        查看准确度历史
-                                    </button>
-                                    <button class="delete-btn" onclick="deleteTask('${task.task_id}')" ${isRunning ? 'disabled' : ''}>
-                                        ${isRunning ? '运行中不可删除' : '删除任务'}
-                                    </button>
+                                    ${buttonsHTML}
                                 </div>
                             </div>
                         `;
@@ -1293,6 +1576,7 @@
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
+            loadCurrentUser();  // 先加载用户信息
             loadStatus();
             loadLogs();
             setInterval(loadStatus, 10000);
@@ -1304,6 +1588,86 @@
                 document.getElementById('predictBtn').click();
             }
         });
+
+        // 重启任务函数
+        async function restartTask(taskId) {
+            if (!confirm(`确定要重新启动任务 ${taskId} 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/tasks/restart/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message);
+                    // 延迟500ms后刷新状态，确保数据库已更新
+                    setTimeout(() => {
+                        loadStatus();
+                        loadLogs();
+                    }, 500);
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+
+        // 从卡片退出任务
+        async function leaveTaskFromCard(taskId) {
+            if (!confirm(`确定要退出任务 ${taskId} 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/tasks/leave/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message);
+                    loadParticipatedTasks();  // 刷新已参与任务列表
+                    loadStatus();
+                    loadLogs();
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误: ' + error.message, 'error');
+            }
+        }
+
+        // 退出登录函数
+        async function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                try {
+                    const response = await fetch('/api/auth/logout/', { method: 'POST' });
+                    if (response.ok) {
+                        window.location.href = '/login/';
+                    } else {
+                        showMessage('退出登录失败', 'error');
+                    }
+                } catch (error) {
+                    showMessage('退出登录失败: ' + error.message, 'error');
+                }
+            }
+        }
     </script>
 </body>
 </html>

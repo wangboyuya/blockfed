@@ -19,14 +19,15 @@ class FederationTaskManager:
             cls._instance.tasks = {}
         return cls._instance
     
-    def create_task(self, task_id, task_name, description="", model_architecture="r8", 
-                   dataset="CIFAR10", epochs=2000, reward_pool=0.00):
+    def create_task(self, task_id, task_name, description="", model_architecture="r8",
+                   dataset="CIFAR10", epochs=2000, reward_pool=0.00, payment_mode="shareholding",
+                   usage_fee_per_request=0.50, creator=None):
         """创建新的联邦任务"""
-        from .tasks import DynamicFederation  # 延迟导入避免循环依赖
-        
+        from .tasks import DynamicFederation
+
         if task_id in self.tasks:
             raise ValueError(f"任务 {task_id} 已存在")
-        
+
         # 创建数据库记录
         task_obj = FederationTask.objects.create(
             task_id=task_id,
@@ -36,7 +37,10 @@ class FederationTaskManager:
             dataset=dataset,
             epochs=epochs,
             reward_pool=reward_pool,
-            total_epochs=epochs  # 同时设置总轮次
+            total_epochs=epochs,
+            payment_mode=payment_mode,
+            usage_fee_per_request=usage_fee_per_request,
+            creator=creator
         )
         
         # 生成动态参数文件
@@ -118,104 +122,110 @@ class FederationTaskManager:
         """启动联邦任务"""
         if task_id not in self.tasks:
             raise ValueError(f"任务 {task_id} 不存在")
-        
+
         task_data = self.tasks[task_id]
         federation = task_data['instance']
-        
+
         if task_data['thread'] and task_data['thread'].is_alive():
             raise ValueError(f"任务 {task_id} 已在运行中")
-        
+
+        # 更新数据库状态为running
+        task_obj = task_data['object']
+        task_obj.status = 'running'
+        task_obj.save()
+
         # 启动任务线程
         thread = threading.Thread(target=federation.start_federation)
         thread.daemon = True
         thread.start()
-        
+
         task_data['thread'] = thread
-        task_data['object'].status = 'running'
-        task_data['object'].save()
-        
+
         TaskLog.objects.create(
-            task=task_data['object'],
+            task=task_obj,
             level='success',
             message="联邦任务启动成功"
         )
 
-    def add_user_to_task(self, task_id, user_id, user_name):
+        logger.info(f"任务 {task_id} 已启动，状态更新为 running")
+
+    def add_user_to_task(self, task_id, user):
+        """添加用户到任务（user是User对象）"""
         if task_id not in self.tasks:
             raise ValueError(f"任务 {task_id} 不存在")
-        
+
         task_data = self.tasks[task_id]
         federation = task_data['instance']
         task_obj = task_data['object']
-        
+
         # 添加到联邦学习实例
-        success = federation.handle.add_user_to_federation(user_id)
-        
+        success = federation.handle.add_user_to_federation(user.id)
+
         if success:
             # 创建参与者记录
             TaskParticipant.objects.get_or_create(
                 task=task_obj,
-                user_id=user_id,
+                user=user,
                 defaults={
-                    'user_name': user_name,
                     'is_active': True
                 }
             )
-            
+
             # 更新活跃用户数
             current_users = len(federation.handle.namelist)
             task_obj.active_users = current_users
-            
-            # ✅ 新增：立即检查并更新状态
+
+            # 立即检查并更新状态
             if task_obj.status == 'paused' and current_users >= 2:
                 task_obj.status = 'running'
                 federation.training_paused = False
                 logger.info(f"任务 {task_id}: 用户加入后立即恢复训练状态")
-            
+
             task_obj.save()
-            
+
             TaskLog.objects.create(
                 task=task_obj,
                 level='success',
-                message=f"用户 {user_name}(ID:{user_id}) 成功加入联邦任务，当前用户数: {current_users}"
+                message=f"用户 {user.username}(ID:{user.id}) 成功加入联邦任务，当前用户数: {current_users}"
             )
             return True
         else:
             TaskLog.objects.create(
                 task=task_data['object'],
                 level='warning',
-                message=f"用户 {user_name}(ID:{user_id}) 加入联邦任务失败"
+                message=f"用户 {user.username}(ID:{user.id}) 加入联邦任务失败"
             )
             return False
     
-    def remove_user_from_task(self, task_id, user_id):
+    def remove_user_from_task(self, task_id, user):
+        """从任务中移除用户（user是User对象）"""
         if task_id not in self.tasks:
             raise ValueError(f"任务 {task_id} 不存在")
-        
+
         task_data = self.tasks[task_id]
         federation = task_data['instance']
         task_obj = task_data['object']
-        
+
         # 从联邦学习实例移除
-        success = federation.handle.remove_user_from_federation(user_id)
-        
+        success = federation.handle.remove_user_from_federation(user.id)
+
         if success:
             # 更新参与者状态
             participant = TaskParticipant.objects.filter(
                 task=task_obj,
-                user_id=user_id,
+                user=user,
                 is_active=True
             ).first()
-            
+
             if participant:
                 participant.is_active = False
                 participant.save()
-            
+
             # 更新活跃用户数
             current_users = len(federation.handle.namelist)
             task_obj.active_users = current_users
-            
-            # ✅ 新增：立即检查并更新状态
+
+            # 立即检查并更新状态
             if task_obj.status == 'running' and current_users < 2:
                 task_obj.status = 'paused'
                 federation.training_paused = True
@@ -243,16 +253,19 @@ class FederationTaskManager:
         if task_id in self.tasks:
             task_data = self.tasks[task_id]
             federation = task_data['instance']
-            
+
             status = federation.get_status()
-            
-            # 从数据库重新获取最新状态
+
+            # 从数据库重新获取最新状态（使用 defer() 优化，但确保获取最新数据）
+            from django.db import connection
+            connection.close()  # 关闭可能存在的旧连接，强制获取新数据
+
             task_obj = FederationTask.objects.get(task_id=task_id)
-            
+
             # 确定训练状态：如果数据库状态是 running 且没有暂停，就是进行中
-            is_training_active = (task_obj.status == 'running' and 
+            is_training_active = (task_obj.status == 'running' and
                                 not federation.training_paused)
-            
+
             status.update({
                 'task_id': task_id,
                 'task_name': task_obj.task_name,
@@ -261,8 +274,13 @@ class FederationTaskManager:
                 'training_paused': federation.training_paused,
                 'is_training_active': is_training_active,  # 新增字段，表示训练是否活跃
                 'is_running': True,  # 标记任务正在运行
+                'created_at': task_obj.created_at.isoformat(),  # 添加创建时间
+                'dataset': task_obj.dataset,  # 数据集
+                'model_architecture': task_obj.model_architecture,  # 模型架构
+                'total_epochs': task_obj.total_epochs,  # 总轮次
+                'creator_id': task_obj.creator.id if task_obj.creator else None,  # 创建者ID
             })
-            
+
             return status
         else:
             # 任务不在内存中，从数据库获取状态
@@ -283,6 +301,9 @@ class FederationTaskManager:
                     'is_running': False,  # 标记任务不在运行
                     'description': task_obj.description,
                     'created_at': task_obj.created_at.isoformat(),
+                    'dataset': task_obj.dataset,  # 数据集
+                    'model_architecture': task_obj.model_architecture,  # 模型架构
+                    'creator_id': task_obj.creator.id if task_obj.creator else None,  # 创建者ID
                 }
             except FederationTask.DoesNotExist:
                 raise ValueError(f"任务 {task_id} 不存在")

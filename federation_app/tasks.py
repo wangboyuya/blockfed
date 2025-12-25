@@ -129,8 +129,10 @@ class DynamicFederation:
                     
                     # 检查是否达到最大训练轮数
                     if self.handle.start_epoch > self.params['epochs']:
-                        self.logger.info(f"任务 {self.task_id}: 达到最大训练轮数，停止训练")  # 使用任务专属logger
+                        self.logger.info(f"任务 {self.task_id}: 达到最大训练轮数，停止训练")
                         self.is_training = False
+                        # 执行股份/奖金分配
+                        self._distribute_rewards_or_shares()
                         # 更新数据库状态为已完成
                         self._update_task_status('completed')
                         break
@@ -164,6 +166,54 @@ class DynamicFederation:
             self.logger.debug(f"任务 {self.task_id} 当前轮次更新为: {epoch}")  # 使用任务专属logger
         except Exception as e:
             self.logger.error(f"更新当前轮次失败: {e}")  # 使用任务专属logger
+
+    def _distribute_rewards_or_shares(self):
+        """任务完成后分配股份或奖金"""
+        try:
+            from federation_app.models import FederationTask
+            from federation_app.business_logic import ShareManagementService
+
+            task = FederationTask.objects.get(task_id=self.task_id)
+
+            # 获取最终贡献度数据
+            contribution_data = self.handle.contribution_manager.get_user_final_ratios()
+
+            if not contribution_data:
+                self.logger.warning(f"任务 {self.task_id}: 没有贡献度数据，跳过分配")
+                return
+
+            # 转换为{user_id: contribution}格式
+            user_contributions = {}
+            for user_id_str, ratio in contribution_data.items():
+                try:
+                    user_id = int(user_id_str)
+                    total_contribution = self.handle.contribution_manager.contribution_data.get(
+                        'user_total_contributions', {}
+                    ).get(str(user_id), 0)
+                    user_contributions[user_id] = total_contribution
+                except (ValueError, KeyError) as e:
+                    self.logger.error(f"解析用户{user_id_str}贡献度失败: {e}")
+                    continue
+
+            # 根据支付模式执行不同的分配逻辑
+            if task.payment_mode == 'shareholding':
+                self.logger.info(f"任务 {self.task_id}: 开始分配股份")
+                result = ShareManagementService.distribute_shares_by_contribution(
+                    task, user_contributions
+                )
+                self.logger.info(f"任务 {self.task_id}: 股份分配完成，共{len(result)}个股东")
+
+            elif task.payment_mode == 'reward':
+                self.logger.info(f"任务 {self.task_id}: 开始分配奖金")
+                result = ShareManagementService.distribute_rewards_by_contribution(
+                    task, user_contributions
+                )
+                self.logger.info(f"任务 {self.task_id}: 奖金分配完成，共{len(result)}个受益人")
+
+        except Exception as e:
+            self.logger.error(f"任务 {self.task_id}: 分配股份/奖金失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
 
     def get_status(self):
         """获取系统状态"""

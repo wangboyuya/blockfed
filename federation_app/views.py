@@ -2,6 +2,7 @@ from .services import task_manager
 from .models import FederationTask, TaskLog, TaskParticipant, GlobalAccuracy
 import traceback
 import logging
+from decimal import Decimal
 
 import os
 import time
@@ -9,20 +10,32 @@ import json
 import torch
 import logging
 
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
 
 logger = logging.getLogger("logger")
 
+
+def index_redirect(request):
+    """根路径重定向"""
+    # 如果已登录，跳转到个人中心；否则跳转到登录页
+    if request.user.is_authenticated:
+        return redirect('profile_page')
+    return redirect('login_page')
+
+
+@login_required(login_url='/login/')
 def dashboard(request):
     """主控制面板"""
     tasks_status = task_manager.get_all_tasks_status()
 
     # 获取任务日志
     recent_logs = TaskLog.objects.select_related('task').order_by('-created_at')[:20]
-    
+
     context = {
         'tasks_status': tasks_status,
         'recent_logs': recent_logs,
@@ -30,6 +43,7 @@ def dashboard(request):
     return render(request, 'federation_app/dashboard.html', context)
 
 
+@login_required(login_url='/login/')
 def prediction_page(request):
     """模型预测页面"""
     return render(request, 'federation_app/predict.html')
@@ -44,29 +58,37 @@ def create_task(request):
             task_id = data.get('task_id')
             task_name = data.get('task_name')
             description = data.get('description', '')
-            
+
             # 新增参数
             model_architecture = data.get('model_architecture', 'r8')
             dataset = data.get('dataset', 'CIFAR10')
             epochs = int(data.get('epochs', 2000))
             reward_pool = float(data.get('reward_pool', 0.00))
-            
+            payment_mode = data.get('payment_mode', 'shareholding')
+            usage_fee = float(data.get('usage_fee_per_request', 0.50))
+
             if not task_id or not task_name:
                 return JsonResponse({'success': False, 'message': '任务编号和名称不能为空'})
-            
+
             # 参数验证
             if model_architecture not in ['CNN', 'r8', 'r18', 'r34']:
                 return JsonResponse({'success': False, 'message': '不支持的模型结构'})
-            
+
             if dataset not in ['MNIST', 'CIFAR10']:
                 return JsonResponse({'success': False, 'message': '不支持的数据集'})
-            
+
             if epochs <= 0:
                 return JsonResponse({'success': False, 'message': '训练轮数必须大于0'})
-            
-            if reward_pool < 0:
-                return JsonResponse({'success': False, 'message': '奖金池不能为负数'})
-            
+
+            if payment_mode not in ['reward', 'shareholding']:
+                return JsonResponse({'success': False, 'message': '无效的支付模式'})
+
+            if payment_mode == 'reward' and reward_pool <= 0:
+                return JsonResponse({'success': False, 'message': '奖金池模式下奖金池必须大于0'})
+
+            if usage_fee < 0:
+                return JsonResponse({'success': False, 'message': '使用费不能为负数'})
+
             task_obj = task_manager.create_task(
                 task_id=task_id,
                 task_name=task_name,
@@ -74,19 +96,22 @@ def create_task(request):
                 model_architecture=model_architecture,
                 dataset=dataset,
                 epochs=epochs,
-                reward_pool=reward_pool
+                reward_pool=reward_pool,
+                payment_mode=payment_mode,
+                usage_fee_per_request=usage_fee,
+                creator=request.user if request.user.is_authenticated else None
             )
             task_manager.start_task(task_id)
-            
+
             return JsonResponse({
-                'success': True, 
+                'success': True,
                 'message': f'联邦任务 {task_name} 创建并启动成功',
                 'task_id': task_id
             })
-            
+
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': '仅支持POST请求'})
 
 @csrf_exempt
@@ -96,28 +121,29 @@ def join_task(request):
         try:
             data = json.loads(request.body)
             task_id = data.get('task_id')
-            user_id = data.get('user_id')
-            user_name = data.get('user_name', f'用户{user_id}')
-            
-            if not task_id or user_id is None:
-                return JsonResponse({'success': False, 'message': '任务编号和用户ID不能为空'})
-            
-            success = task_manager.add_user_to_task(task_id, int(user_id), user_name)
-            
+
+            if not request.user.is_authenticated:
+                return JsonResponse({'success': False, 'message': '请先登录'})
+
+            if not task_id:
+                return JsonResponse({'success': False, 'message': '任务编号不能为空'})
+
+            success = task_manager.add_user_to_task(task_id, request.user)
+
             if success:
                 return JsonResponse({
-                    'success': True, 
-                    'message': f'用户 {user_name} 成功加入联邦任务 {task_id}'
+                    'success': True,
+                    'message': f'用户 {request.user.username} 成功加入联邦任务 {task_id}'
                 })
             else:
                 return JsonResponse({
-                    'success': False, 
-                    'message': f'用户 {user_name} 加入联邦任务失败'
+                    'success': False,
+                    'message': f'用户 {request.user.username} 加入联邦任务失败'
                 })
-                
+
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': '仅支持POST请求'})
 
 @csrf_exempt
@@ -127,27 +153,29 @@ def leave_task(request):
         try:
             data = json.loads(request.body)
             task_id = data.get('task_id')
-            user_id = data.get('user_id')
-            
-            if not task_id or user_id is None:
-                return JsonResponse({'success': False, 'message': '任务编号和用户ID不能为空'})
-            
-            success = task_manager.remove_user_from_task(task_id, int(user_id))
-            
+
+            if not request.user.is_authenticated:
+                return JsonResponse({'success': False, 'message': '请先登录'})
+
+            if not task_id:
+                return JsonResponse({'success': False, 'message': '任务编号不能为空'})
+
+            success = task_manager.remove_user_from_task(task_id, request.user)
+
             if success:
                 return JsonResponse({
-                    'success': True, 
-                    'message': f'用户 {user_id} 成功退出联邦任务 {task_id}'
+                    'success': True,
+                    'message': f'用户 {request.user.username} 成功退出联邦任务 {task_id}'
                 })
             else:
                 return JsonResponse({
-                    'success': False, 
-                    'message': f'用户 {user_id} 退出联邦任务失败'
+                    'success': False,
+                    'message': f'用户 {request.user.username} 退出联邦任务失败'
                 })
-                
+
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)})
-    
+
     return JsonResponse({'success': False, 'message': '仅支持POST请求'})
 
 @csrf_exempt
@@ -196,6 +224,63 @@ def delete_task(request):
             logger.error(f"删除任务失败: {e}")
             return JsonResponse({'success': False, 'message': str(e)})
     
+    return JsonResponse({'success': False, 'message': '仅支持POST请求'})
+
+@csrf_exempt
+def restart_task(request):
+    """重新启动任务"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            task_id = data.get('task_id')
+
+            if not task_id:
+                return JsonResponse({'success': False, 'message': '任务编号不能为空'})
+
+            # 检查任务是否存在
+            try:
+                task_obj = FederationTask.objects.get(task_id=task_id)
+            except FederationTask.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'任务 {task_id} 不存在'})
+
+            # 权限检查：只有创建者可以重启任务
+            if request.user.is_authenticated and task_obj.creator:
+                if request.user.id != task_obj.creator.id:
+                    return JsonResponse({'success': False, 'message': '只有任务创建者才能重启任务'})
+
+            # 检查任务是否已完成
+            if task_obj.status == 'completed':
+                return JsonResponse({'success': False, 'message': '已完成的任务无法重启'})
+
+            # 如果任务不在内存中，需要重新创建
+            if task_id not in task_manager.tasks:
+                # 重新创建任务
+                task_manager.create_task(
+                    task_id=task_obj.task_id,
+                    task_name=task_obj.task_name,
+                    description=task_obj.description,
+                    model_architecture=task_obj.model_architecture,
+                    dataset=task_obj.dataset,
+                    epochs=task_obj.epochs,
+                    reward_pool=float(task_obj.reward_pool),
+                    payment_mode=task_obj.payment_mode,
+                    usage_fee_per_request=float(task_obj.usage_fee_per_request),
+                    creator=task_obj.creator
+                )
+
+            # 启动任务
+            task_manager.start_task(task_id)
+
+            return JsonResponse({
+                'success': True,
+                'message': f'任务 {task_obj.task_name} 已成功重启'
+            })
+
+        except Exception as e:
+            logger.error(f"重启任务失败: {e}")
+            traceback.print_exc()
+            return JsonResponse({'success': False, 'message': f'重启任务失败: {str(e)}'})
+
     return JsonResponse({'success': False, 'message': '仅支持POST请求'})
 
 @csrf_exempt
@@ -283,10 +368,23 @@ def get_logs(request):
 
 
 @csrf_exempt
+@login_required
 def predict_image(request):
-    """图像预测API"""
+    """图像预测API - 需要支付10虚拟币"""
     if request.method == 'POST':
         try:
+            # 定义预测价格
+            PREDICTION_COST = 10
+
+            # 检查用户虚拟币余额
+            user = request.user
+            if user.virtual_coins < PREDICTION_COST:
+                return JsonResponse({
+                    'success': False,
+                    'message': f'虚拟币不足！需要{PREDICTION_COST}币，当前仅有{user.virtual_coins}币',
+                    'insufficient_coins': True
+                })
+
             # 检查是否有文件上传
             if 'image' not in request.FILES:
                 return JsonResponse({'success': False, 'message': '没有上传图像文件'})
@@ -318,19 +416,42 @@ def predict_image(request):
                     destination.write(chunk)
 
             try:
-                # 调用预测函数
+                # 先调用预测函数（预测失败会抛出异常）
                 result = run_model_prediction(temp_file_path, task_id, dataset_type)
+
+                # 预测成功后，使用事务扣除虚拟币（确保原子性）
+                with transaction.atomic():
+                    # 重新获取用户对象（避免并发问题）
+                    user.refresh_from_db()
+
+                    # 扣除虚拟币
+                    coins_before = user.virtual_coins
+                    user.virtual_coins -= PREDICTION_COST
+                    user.save()
+
+                    # 创建交易记录
+                    from .models import Transaction
+                    Transaction.objects.create(
+                        user=user,
+                        transaction_type='model_usage',
+                        amount=Decimal('0.00'),
+                        balance_before=user.balance,
+                        balance_after=user.balance,
+                        description=f'模型预测服务费用 (任务ID: {task_id}) - 扣除{PREDICTION_COST}虚拟币，剩余{user.virtual_coins}虚拟币'
+                    )
 
                 # 清理临时文件
                 os.remove(temp_file_path)
 
                 return JsonResponse({
                     'success': True,
-                    'prediction': result
+                    'prediction': result,
+                    'coins_charged': PREDICTION_COST,
+                    'remaining_coins': user.virtual_coins
                 })
 
             except Exception as e:
-                # 确保临时文件被清理
+                # 预测失败，不扣钱，只清理临时文件
                 if os.path.exists(temp_file_path):
                     os.remove(temp_file_path)
                 raise e
@@ -488,3 +609,17 @@ def get_model_info(request, task_id):
             return JsonResponse({'success': False, 'message': str(e)})
 
     return JsonResponse({'success': False, 'message': '仅支持GET请求'})
+
+
+def login_page(request):
+    """登录页面"""
+    # 如果已登录，重定向到个人中心
+    if request.user.is_authenticated:
+        return redirect('profile_page')
+    return render(request, 'federation_app/login.html')
+
+
+@login_required(login_url='/login/')
+def profile_page(request):
+    """个人中心页面"""
+    return render(request, 'federation_app/profile.html')

@@ -59,6 +59,9 @@ DATABASES = {
     }
 }
 
+# 自定义用户模型
+AUTH_USER_MODEL = 'federation_app.User'
+
 LANGUAGE_CODE = 'zh-hans'
 TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
