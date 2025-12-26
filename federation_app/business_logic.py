@@ -8,7 +8,8 @@ from .models import (
     FederationTask, ModelShareholding, RewardDistribution,
     ModelUsageRecord, RevenueDistribution, Transaction, User
 )
-
+from .blockchain_utils import sync_contribution_to_chain,get_contract,w3
+from decimal import Decimal
 
 class ShareManagementService:
     """股份管理服务"""
@@ -59,6 +60,48 @@ class ShareManagementService:
 
         task.model_status = 'online'
         task.save()
+        # --- 新增区块链同步逻辑 ---
+        # model_hash 可以取模型文件的 MD5 或固定占位符
+        model_hash = "hash_" + task.task_id 
+        success = sync_contribution_to_chain(task.task_id, contribution_data, model_hash)
+        
+        if success:
+            print(f"任务 {task.task_id} 贡献度已成功上链存证")
+        # ------------------------
+
+        # 2. [新增逻辑] 同步到区块链
+        try:
+            manager_contract = get_contract('FederationManager')
+            admin_account = w3.eth.accounts[0]  # 使用 Ganache 第一个账号作为管理员
+            
+            # 转换数据格式
+            user_addresses = []
+            ratios = []
+            for user_id, contribution in contribution_data.items():
+                # 暂时模拟地址：每个用户 ID 对应 Ganache 的一个账号
+                # 生产环境下你需要在 User 模型里加一个 wallet_address 字段
+                simulated_address = w3.eth.accounts[int(user_id) % 10]
+                user_addresses.append(simulated_address)
+                # Solidity 不支持浮点数，比例放大 10000 倍（例如 0.4567 -> 4567）
+                ratios.append(int(float(contribution) * 10000))
+
+            # 调用合约的 setContributionRatios 方法
+            # model_hash 可以取模型文件的路径哈希
+            model_hash = f"hash_{task.task_id}_{task.current_epoch}"
+            
+            tx_hash = manager_contract.functions.setContributionRatios(
+                task.task_id, 
+                user_addresses, 
+                ratios, 
+                model_hash
+            ).transact({'from': admin_account})
+            
+            # 等待交易确认
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            print(f"区块链同步成功！交易哈希: {receipt.transactionHash.hex()}")
+            
+        except Exception as e:
+            print(f"区块链同步失败: {str(e)}")
 
         return created_holdings
 
@@ -220,6 +263,30 @@ class ModelUsageService:
                     'share_ratio': float(holding.share_ratio),
                     'revenue_amount': float(revenue_amount)
                 })
+
+        # 2. [核心逻辑] 区块链分红
+        try:
+            manager_contract = get_contract('FederationManager')
+            hc_contract = get_contract('HyperCoin')
+            
+            caller_address = w3.eth.accounts[user.id % 10] # 预测者的地址
+            admin_address = w3.eth.accounts[0]
+            
+            # 假设预测费为 10 HC
+            fee_amount = 10 * 10**18 
+            
+            # 先授权合约可以扣除预测者的钱（ERC-20 标准操作）
+            approve_tx = hc_contract.functions.approve(manager_contract.address, fee_amount).transact({'from': caller_address})
+            w3.eth.wait_for_transaction_receipt(approve_tx) # 必须等授权成功
+            # 触发合约的分红逻辑
+            tx_hash = manager_contract.functions.distributeRevenue(task.task_id, fee_amount).transact({'from': caller_address})
+            w3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            print(f"分红交易已在链上完成: {receipt.transactionHash.hex()}")
+            
+        except Exception as e:
+            print(f"区块链分红失败: {e}")
 
         return {
             'usage_record_id': usage_record.id,

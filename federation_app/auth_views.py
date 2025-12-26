@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from django.db import transaction
 from .models import User, Transaction
 from .datablock_service import datablock_market_service
-
+from .blockchain_utils import sync_contribution_to_chain, get_contract
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -189,6 +189,10 @@ def recharge_balance(request):
             balance_after=user.balance,
             description=f'充值¥{amount}'
         )
+        hc_contract = get_contract('HyperCoin')
+        admin = w3.eth.accounts[0]
+        user_address = w3.eth.accounts[request.user.id % 10]
+        hc_contract.functions.faucet(user_address, 100 * 10**18).transact({'from': admin})
 
         return JsonResponse({
             'success': True,
