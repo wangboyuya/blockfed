@@ -302,10 +302,10 @@
         <!-- 用户资产概览 -->
         <div class="grid">
             <div class="card">
-                <div class="card-title">💰 账户余额</div>
-                <div class="stat-value" id="balance">¥0.00</div>
-                <div class="stat-label">可用余额</div>
-                <button class="btn btn-primary" style="margin-top: 12px;" onclick="recharge()">充值</button>
+                <div class="card-title">💰 ETH余额</div>
+                <div class="stat-value" id="eth-balance">0.0000 ETH</div>
+                <div class="stat-label">Ganache账户 <span id="ganache-index" style="color: var(--primary);">INDEX: -</span></div>
+                <button class="btn btn-primary" style="margin-top: 12px;" onclick="recharge()">充值ETH</button>
             </div>
 
             <div class="card">
@@ -323,7 +323,7 @@
 
             <div class="card">
                 <div class="card-title">📈 累计收益</div>
-                <div class="stat-value" id="total-revenue">¥0.00</div>
+                <div class="stat-value" id="total-revenue">0.0000 ETH</div>
                 <div class="stat-label">总收益</div>
             </div>
 
@@ -421,10 +421,14 @@
                 const assets = await assetsRes.json();
 
                 if (assets.success) {
-                    document.getElementById('balance').textContent = '¥' + assets.assets.balance.toFixed(2);
+                    // 显示ETH余额
+                    document.getElementById('eth-balance').textContent = assets.assets.eth_balance.toFixed(4) + ' ETH';
+                    document.getElementById('ganache-index').textContent = 'INDEX: ' + (assets.assets.ganache_index ?? '-');
+                    // 显示虚拟币
                     document.getElementById('virtual-coins').textContent = assets.assets.virtual_coins;
+                    // 显示其他资产
                     document.getElementById('shares-count').textContent = assets.assets.model_shares_count;
-                    document.getElementById('total-revenue').textContent = '¥' + (assets.assets.total_revenue + assets.assets.total_rewards).toFixed(2);
+                    document.getElementById('total-revenue').textContent = (assets.assets.total_revenue + assets.assets.total_rewards).toFixed(4) + ' ETH';
                     document.getElementById('datablocks-count').textContent = assets.assets.data_blocks_count || 0;
                 }
 

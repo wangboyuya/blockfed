@@ -4,8 +4,17 @@ import json
 
 class User(AbstractUser):
     """扩展Django内置用户模型"""
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="账户余额")
-    virtual_coins = models.IntegerField(default=100, verbose_name="虚拟币")
+    ganache_index = models.IntegerField(
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Ganache账户索引",
+        help_text="对应Ganache中的账户索引(0-9)"
+    )
+    # 以下字段已废弃，保留仅用于数据迁移兼容
+    # 实际余额请使用 user.eth_balance（从Ganache实时读取）
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="账户余额(已废弃)")
+    virtual_coins = models.IntegerField(default=0, verbose_name="虚拟币(已废弃)")
 
     class Meta:
         verbose_name = "用户"
@@ -13,6 +22,32 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.username
+
+    @property
+    def wallet_address(self):
+        """获取用户对应的Ganache钱包地址"""
+        if self.ganache_index is None:
+            return None
+        try:
+            from federation_app.blockchain_utils import w3
+            return w3.eth.accounts[self.ganache_index]
+        except Exception as e:
+            print(f"获取钱包地址失败: {e}")
+            return None
+
+    @property
+    def eth_balance(self):
+        """从Ganache读取实时ETH余额（推荐使用）"""
+        if not self.wallet_address:
+            return 0.0
+        try:
+            from federation_app.blockchain_utils import w3
+            balance_wei = w3.eth.get_balance(self.wallet_address)
+            balance_eth = w3.from_wei(balance_wei, 'ether')
+            return float(balance_eth)
+        except Exception as e:
+            print(f"获取ETH余额失败: {e}")
+            return 0.0
 
 class FederationTask(models.Model):
     TASK_STATUS = [

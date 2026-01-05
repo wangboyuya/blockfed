@@ -109,7 +109,7 @@ class ShareManagementService:
     @transaction.atomic
     def distribute_rewards_by_contribution(task, contribution_data):
         """
-        根据Shapley值贡献度分配奖金（奖金池模式）
+        根据Shapley值贡献度分配奖金（奖金池模式）- 使用ETH转账
 
         Args:
             task: FederationTask实例
@@ -120,6 +120,9 @@ class ShareManagementService:
 
         if task.reward_pool <= 0:
             raise ValueError("奖金池为0，无法分配奖金")
+
+        if not task.creator or not task.creator.wallet_address:
+            raise ValueError("任务创建者未绑定Ganache账户，无法转账")
 
         total_contribution = sum(contribution_data.values())
         if total_contribution == 0:
@@ -134,39 +137,65 @@ class ShareManagementService:
             except User.DoesNotExist:
                 continue
 
+            if not user.wallet_address:
+                print(f"警告: 用户{user.username}(ID:{user_id})未绑定Ganache账户，跳过奖金分配")
+                continue
+
             contribution_ratio = Decimal(str(contribution)) / Decimal(str(total_contribution))
             reward_amount = task.reward_pool * contribution_ratio
 
-            balance_before = user.balance
-            user.balance += reward_amount
-            user.save()
+            # 获取转账前余额
+            balance_before = user.eth_balance
 
-            Transaction.objects.create(
-                user=user,
-                transaction_type='reward_distribution',
-                amount=reward_amount,
-                balance_before=balance_before,
-                balance_after=user.balance,
-                description=f'任务{task.task_name}奖金分配',
-                related_task=task
-            )
+            # 从任务创建者账户转ETH到参与者账户
+            try:
+                amount_wei = w3.to_wei(reward_amount, 'ether')
+                tx_hash = w3.eth.send_transaction({
+                    'from': task.creator.wallet_address,
+                    'to': user.wallet_address,
+                    'value': amount_wei,
+                    'gas': 21000
+                })
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            distribution = RewardDistribution.objects.create(
-                task=task,
-                user=user,
-                contribution_ratio=contribution_ratio,
-                reward_amount=reward_amount,
-                paid=True
-            )
+                if receipt.status != 1:
+                    print(f"警告: 转账给{user.username}失败，跳过")
+                    continue
 
-            distributions.append({
-                'user_id': user.id,
-                'username': user.username,
-                'contribution_ratio': float(contribution_ratio),
-                'reward_amount': float(reward_amount)
-            })
+                balance_after = user.eth_balance
 
-            total_distributed += reward_amount
+                # 记录交易
+                Transaction.objects.create(
+                    user=user,
+                    transaction_type='reward_distribution',
+                    amount=reward_amount,
+                    balance_before=Decimal(str(balance_before)),
+                    balance_after=Decimal(str(balance_after)),
+                    description=f'任务{task.task_name}奖金分配 ({float(contribution_ratio*100):.2f}%贡献度)',
+                    related_task=task
+                )
+
+                distribution = RewardDistribution.objects.create(
+                    task=task,
+                    user=user,
+                    contribution_ratio=contribution_ratio,
+                    reward_amount=reward_amount,
+                    paid=True
+                )
+
+                distributions.append({
+                    'user_id': user.id,
+                    'username': user.username,
+                    'contribution_ratio': float(contribution_ratio),
+                    'reward_amount': float(reward_amount),
+                    'tx_hash': receipt.transactionHash.hex()
+                })
+
+                total_distributed += reward_amount
+
+            except Exception as e:
+                print(f"转账给用户{user.username}失败: {e}")
+                continue
 
         task.model_status = 'offline'
         task.save()
@@ -181,7 +210,7 @@ class ModelUsageService:
     @transaction.atomic
     def charge_and_distribute(task, user, prediction_result='', input_hash=''):
         """
-        模型使用付费并自动分配收益给股东
+        模型使用付费并自动分配收益给股东 - 使用ETH转账
 
         Args:
             task: FederationTask实例
@@ -195,22 +224,44 @@ class ModelUsageService:
         if task.model_status != 'online':
             raise ValueError(f"模型{task.task_name}未上线，无法使用")
 
+        if not user.wallet_address:
+            raise ValueError(f"用户未绑定Ganache账户，无法使用模型")
+
         usage_fee = task.usage_fee_per_request
 
-        if user.balance < usage_fee:
-            raise ValueError(f"余额不足，需要¥{usage_fee}，当前余额¥{user.balance}")
+        if user.eth_balance < float(usage_fee):
+            raise ValueError(f"ETH余额不足，需要{usage_fee} ETH，当前余额{user.eth_balance:.4f} ETH")
 
-        balance_before = user.balance
-        user.balance -= usage_fee
-        user.save()
+        balance_before = user.eth_balance
+
+        # 将使用费转到任务创建者或收益池账户
+        # 简化处理：直接转给任务创建者
+        if not task.creator or not task.creator.wallet_address:
+            raise ValueError("任务创建者未绑定Ganache账户，无法收款")
+
+        # 执行ETH转账（用户->创建者）
+        amount_wei = w3.to_wei(usage_fee, 'ether')
+        tx_hash = w3.eth.send_transaction({
+            'from': user.wallet_address,
+            'to': task.creator.wallet_address,
+            'value': amount_wei,
+            'gas': 21000
+        })
+
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status != 1:
+            raise ValueError("区块链交易失败")
+
+        balance_after = user.eth_balance
 
         Transaction.objects.create(
             user=user,
             transaction_type='model_usage',
             amount=usage_fee,
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f'使用模型{task.task_name}进行预测',
+            balance_before=Decimal(str(balance_before)),
+            balance_after=Decimal(str(balance_after)),
+            description=f'使用模型{task.task_name}进行预测，交易哈希: {receipt.transactionHash.hex()[:10]}...',
             related_task=task
         )
 
@@ -229,69 +280,72 @@ class ModelUsageService:
 
         distributions = []
 
+        # 如果是股份制模式，分配收益给股东
         if task.payment_mode == 'shareholding':
             shareholdings = ModelShareholding.objects.filter(task=task)
 
             for holding in shareholdings:
                 revenue_amount = usage_fee * holding.share_ratio
 
-                shareholder_balance_before = holding.user.balance
-                holding.user.balance += revenue_amount
-                holding.user.save()
+                if not holding.user.wallet_address:
+                    print(f"警告: 股东{holding.user.username}未绑定Ganache账户，跳过分红")
+                    continue
 
-                Transaction.objects.create(
-                    user=holding.user,
-                    transaction_type='revenue',
-                    amount=revenue_amount,
-                    balance_before=shareholder_balance_before,
-                    balance_after=holding.user.balance,
-                    description=f'模型{task.task_name}使用收益分红',
-                    related_task=task
-                )
+                shareholder_balance_before = holding.user.eth_balance
 
-                RevenueDistribution.objects.create(
-                    task=task,
-                    shareholder=holding.user,
-                    revenue_amount=revenue_amount,
-                    source_usage=usage_record,
-                    share_ratio_snapshot=holding.share_ratio
-                )
+                # 从创建者账户转账给股东
+                try:
+                    revenue_wei = w3.to_wei(revenue_amount, 'ether')
+                    dist_tx_hash = w3.eth.send_transaction({
+                        'from': task.creator.wallet_address,
+                        'to': holding.user.wallet_address,
+                        'value': revenue_wei,
+                        'gas': 21000
+                    })
 
-                distributions.append({
-                    'shareholder_id': holding.user.id,
-                    'shareholder_name': holding.user.username,
-                    'share_ratio': float(holding.share_ratio),
-                    'revenue_amount': float(revenue_amount)
-                })
+                    dist_receipt = w3.eth.wait_for_transaction_receipt(dist_tx_hash)
 
-        # 2. [核心逻辑] 区块链分红
-        try:
-            manager_contract = get_contract('FederationManager')
-            hc_contract = get_contract('HyperCoin')
-            
-            caller_address = w3.eth.accounts[user.id % 10] # 预测者的地址
-            admin_address = w3.eth.accounts[0]
-            
-            # 假设预测费为 10 HC
-            fee_amount = 10 * 10**18 
-            
-            # 先授权合约可以扣除预测者的钱（ERC-20 标准操作）
-            approve_tx = hc_contract.functions.approve(manager_contract.address, fee_amount).transact({'from': caller_address})
-            w3.eth.wait_for_transaction_receipt(approve_tx) # 必须等授权成功
-            # 触发合约的分红逻辑
-            tx_hash = manager_contract.functions.distributeRevenue(task.task_id, fee_amount).transact({'from': caller_address})
-            w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-            print(f"分红交易已在链上完成: {receipt.transactionHash.hex()}")
-            
-        except Exception as e:
-            print(f"区块链分红失败: {e}")
+                    if dist_receipt.status != 1:
+                        print(f"警告: 分红给{holding.user.username}失败")
+                        continue
+
+                    shareholder_balance_after = holding.user.eth_balance
+
+                    Transaction.objects.create(
+                        user=holding.user,
+                        transaction_type='revenue',
+                        amount=revenue_amount,
+                        balance_before=Decimal(str(shareholder_balance_before)),
+                        balance_after=Decimal(str(shareholder_balance_after)),
+                        description=f'模型{task.task_name}使用收益分红 ({float(holding.share_ratio*100):.2f}%)',
+                        related_task=task
+                    )
+
+                    RevenueDistribution.objects.create(
+                        task=task,
+                        shareholder=holding.user,
+                        revenue_amount=revenue_amount,
+                        source_usage=usage_record,
+                        share_ratio_snapshot=holding.share_ratio
+                    )
+
+                    distributions.append({
+                        'shareholder_id': holding.user.id,
+                        'shareholder_name': holding.user.username,
+                        'share_ratio': float(holding.share_ratio),
+                        'revenue_amount': float(revenue_amount),
+                        'tx_hash': dist_receipt.transactionHash.hex()
+                    })
+
+                except Exception as e:
+                    print(f"分红给股东{holding.user.username}失败: {e}")
+                    continue
 
         return {
             'usage_record_id': usage_record.id,
             'usage_fee': float(usage_fee),
-            'user_balance_after': float(user.balance),
+            'user_balance_after': user.eth_balance,
+            'tx_hash': receipt.transactionHash.hex(),
             'distributions': distributions
         }
 

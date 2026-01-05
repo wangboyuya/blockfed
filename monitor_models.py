@@ -18,6 +18,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class ModelUpdateHandler(FileSystemEventHandler):
+    """
+    监控联邦学习模型目录，自动将贡献度上链
+
+    重要说明：
+    - 系统已升级为直接使用Ganache ETH，不再使用HyperCoin虚拟币
+    - 用户通过ganache_index字段绑定Ganache账户（0-9）
+    - 余额直接从Ganache读取：user.eth_balance
+    - 钱包地址通过user.wallet_address获取
+    """
     def on_created(self, event):
         """逻辑1：保留原有功能 - 监听新文件夹创建"""
         if event.is_directory:
@@ -31,13 +40,13 @@ class ModelUpdateHandler(FileSystemEventHandler):
         if not event.is_directory:
             file_path = event.src_path
             file_name = os.path.basename(file_path)
-            
+
             if file_name == "contribution_records.json":
                 folder_path = os.path.dirname(file_path)
                 folder_name = os.path.basename(folder_path)
                 logger.info(f"🔄 检测到文件更新: {file_path}")
                 # 稍微等待文件写入完成，防止读取冲突
-                time.sleep(0.5) 
+                time.sleep(0.5)
                 self.process_contribution(folder_name, file_path)
 
     def _check_and_process(self, folder_path, folder_name):
@@ -50,28 +59,33 @@ class ModelUpdateHandler(FileSystemEventHandler):
             time.sleep(1)
 
     def process_contribution(self, folder_name, file_path):
-        """核心解析与上链逻辑"""
+        """
+        核心解析与上链逻辑
+
+        注意：
+        - sync_contribution_to_chain已更新为使用user.wallet_address
+        - 会自动跳过未绑定ganache_index的用户
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             contributions = data.get("user_total_contributions")
             if not contributions:
                 return
 
             # 解析 Task ID (取文件夹名第一个下划线前的部分)
             # 例如 "1_TEST" -> "1"
-            task_id = folder_name.split('_')[0] 
-            
+            task_id = folder_name.split('_')[0]
+
             logger.info(f"📢 正在同步任务 {task_id} 的最新贡献度至区块链...")
-            
+
             # 使用文件夹名作为指纹，或者使用时间戳
             model_hash = f"hash_{folder_name}_updated_{int(time.time())}"
-            
-            # 调用你之前的上链函数
-            # 由于合约中加入了 delete task.participants，这步操作会覆盖旧数据
+
+            # 调用上链函数（已自动使用user.wallet_address）
             success = sync_contribution_to_chain(task_id, contributions, model_hash)
-            
+
             if success:
                 logger.info(f"✅ 任务 {task_id} 链上数据已更新成功")
             else:

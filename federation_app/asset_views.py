@@ -49,8 +49,10 @@ def get_user_assets(request):
         return JsonResponse({
             'success': True,
             'assets': {
-                'balance': float(user.balance),
-                'virtual_coins': user.virtual_coins,
+                'eth_balance': user.eth_balance,  # 从Ganache读取ETH余额
+                'ganache_index': user.ganache_index,  # Ganache账户索引
+                'wallet_address': user.wallet_address,  # 钱包地址
+                'virtual_coins': user.virtual_coins,  # 虚拟币（用于数据块交易）
                 'model_shares_count': shareholdings.count(),
                 'model_shares_value': total_share_value,
                 'data_blocks_count': user_data_blocks_count,  # 新增

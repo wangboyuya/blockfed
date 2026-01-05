@@ -11,13 +11,13 @@ from django.views.decorators.http import require_http_methods
 from django.db import transaction
 from .models import User, Transaction
 from .datablock_service import datablock_market_service
-from .blockchain_utils import sync_contribution_to_chain, get_contract
+from .blockchain_utils import sync_contribution_to_chain, get_contract, w3
 
 @csrf_exempt
 @require_http_methods(["POST"])
 @transaction.atomic
 def register_user(request):
-    """用户注册 - 自动分配100虚拟币和3个免费数据块"""
+    """用户注册 - 自动分配Ganache账户和3个免费数据块"""
     try:
         data = json.loads(request.body)
         username = data.get('username')
@@ -30,39 +30,39 @@ def register_user(request):
         if User.objects.filter(username=username).exists():
             return JsonResponse({'success': False, 'error': '用户名已存在'})
 
-        # 创建用户（初始100虚拟币）
+        # 自动分配Ganache账户索引（0-9）
+        assigned_indices = set(User.objects.filter(ganache_index__isnull=False).values_list('ganache_index', flat=True))
+        available_indices = set(range(10)) - assigned_indices
+
+        if not available_indices:
+            return JsonResponse({'success': False, 'error': 'Ganache账户已满（最多10个用户），请联系管理员'})
+
+        ganache_index = min(available_indices)  # 分配最小的可用索引
+
+        # 创建用户（绑定Ganache账户）
         user = User.objects.create_user(
             username=username,
             password=password,
             email=email,
-            balance=Decimal('0.00'),
-            virtual_coins=100  # 注册赠送100虚拟币
+            ganache_index=ganache_index,
+            balance=Decimal('0.00'),  # 保留字段但不使用
+            virtual_coins=0  # 虚拟币初始为0，需用ETH购买
         )
-
-        # 分配3个免费数据块
-        allocation_result = datablock_market_service.allocate_free_blocks(user, num_blocks=3)
-
-        if not allocation_result['success']:
-            # 如果分配失败，记录警告但不影响注册
-            print(f"警告：用户 {username} 注册成功，但数据块分配失败: {allocation_result['message']}")
-            allocated_blocks = []
-        else:
-            allocated_blocks = allocation_result.get('block_ids', [])
 
         # 登录用户
         login(request, user)
 
         return JsonResponse({
             'success': True,
-            'message': '注册成功',
+            'message': f'注册成功，已分配Ganache账户{ganache_index}',
             'user': {
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
-                'balance': float(user.balance),
-                'virtual_coins': user.virtual_coins,
-                'allocated_blocks': allocated_blocks,
-                'allocated_blocks_count': len(allocated_blocks)
+                'ganache_index': user.ganache_index,
+                'wallet_address': user.wallet_address,
+                'eth_balance': user.eth_balance,
+                'virtual_coins': user.virtual_coins
             }
         })
     except Exception as e:
@@ -92,8 +92,9 @@ def login_user(request):
                     'id': user.id,
                     'username': user.username,
                     'email': user.email,
-                    'balance': float(user.balance),
-                    'virtual_coins': user.virtual_coins
+                    'ganache_index': user.ganache_index,
+                    'wallet_address': user.wallet_address,
+                    'eth_balance': user.eth_balance
                 }
             })
         else:
@@ -126,8 +127,9 @@ def get_user_profile(request):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
-                'balance': float(user.balance),
-                'virtual_coins': user.virtual_coins,
+                'ganache_index': user.ganache_index,
+                'wallet_address': user.wallet_address,
+                'eth_balance': user.eth_balance,
                 'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S')
             }
         })
@@ -168,7 +170,7 @@ def get_user_transactions(request):
 @login_required
 @transaction.atomic
 def recharge_balance(request):
-    """充值余额（模拟）"""
+    """充值余额 - 从管理员账户转ETH到用户Ganache账户"""
     try:
         data = json.loads(request.body)
         amount = Decimal(str(data.get('amount', 0)))
@@ -177,30 +179,52 @@ def recharge_balance(request):
             return JsonResponse({'success': False, 'error': '充值金额必须大于0'})
 
         user = request.user
-        balance_before = user.balance
-        user.balance += amount
-        user.save()
 
+        if user.ganache_index is None:
+            return JsonResponse({'success': False, 'error': '用户未绑定Ganache账户，请联系管理员'})
+
+        # 获取充值前后的ETH余额
+        balance_before = user.eth_balance
+
+        # 从管理员账户(accounts[0])转账ETH到用户账户
+        admin_address = w3.eth.accounts[0]
+        user_address = user.wallet_address
+        amount_wei = w3.to_wei(amount, 'ether')
+
+        # 执行ETH转账
+        tx_hash = w3.eth.send_transaction({
+            'from': admin_address,
+            'to': user_address,
+            'value': amount_wei,
+            'gas': 21000
+        })
+
+        # 等待交易确认
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status != 1:
+            return JsonResponse({'success': False, 'error': '区块链交易失败'})
+
+        balance_after = user.eth_balance
+
+        # 记录交易（金额单位为ETH）
         Transaction.objects.create(
             user=user,
             transaction_type='recharge',
             amount=amount,
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f'充值¥{amount}'
+            balance_before=Decimal(str(balance_before)),
+            balance_after=Decimal(str(balance_after)),
+            description=f'充值{amount} ETH，交易哈希: {receipt.transactionHash.hex()[:10]}...'
         )
-        hc_contract = get_contract('HyperCoin')
-        admin = w3.eth.accounts[0]
-        user_address = w3.eth.accounts[request.user.id % 10]
-        hc_contract.functions.faucet(user_address, 100 * 10**18).transact({'from': admin})
 
         return JsonResponse({
             'success': True,
-            'message': '充值成功',
-            'balance': float(user.balance)
+            'message': f'充值成功，已转入{amount} ETH',
+            'eth_balance': user.eth_balance,
+            'tx_hash': receipt.transactionHash.hex()
         })
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': f'充值失败: {str(e)}'}, status=500)
 
 
 @csrf_exempt
@@ -208,7 +232,7 @@ def recharge_balance(request):
 @login_required
 @transaction.atomic
 def purchase_virtual_coins(request):
-    """使用账户余额购买虚拟币"""
+    """使用ETH购买虚拟币"""
     try:
         data = json.loads(request.body)
         coin_amount = int(data.get('amount', 0))
@@ -216,21 +240,43 @@ def purchase_virtual_coins(request):
         if coin_amount <= 0:
             return JsonResponse({'success': False, 'error': '购买数量必须大于0'})
 
-        # 汇率：1元 = 10虚拟币
-        exchange_rate = 10
-        cost = Decimal(str(coin_amount / exchange_rate))
+        # 汇率：1 ETH = 1000 虚拟币
+        exchange_rate = 1000
+        eth_cost = Decimal(str(coin_amount / exchange_rate))
 
         user = request.user
 
-        if user.balance < cost:
+        if not user.wallet_address:
+            return JsonResponse({'success': False, 'error': '用户未绑定Ganache账户'})
+
+        if user.eth_balance < float(eth_cost):
             return JsonResponse({
                 'success': False,
-                'error': f'余额不足，需要¥{cost:.2f}，当前余额¥{user.balance:.2f}'
+                'error': f'ETH余额不足，需要{eth_cost:.4f} ETH，当前余额{user.eth_balance:.4f} ETH'
             })
 
-        # 扣除余额
-        balance_before = user.balance
-        user.balance -= cost
+        # 获取购买前余额
+        eth_balance_before = user.eth_balance
+
+        # 从用户账户转ETH到管理员账户（系统金库）
+        admin_address = w3.eth.accounts[0]
+        amount_wei = w3.to_wei(eth_cost, 'ether')
+
+        tx_hash = w3.eth.send_transaction({
+            'from': user.wallet_address,
+            'to': admin_address,
+            'value': amount_wei,
+            'gas': 21000
+        })
+
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status != 1:
+            return JsonResponse({'success': False, 'error': '区块链交易失败'})
+
+        eth_balance_after = user.eth_balance
+
+        # 增加虚拟币
         user.virtual_coins += coin_amount
         user.save()
 
@@ -238,20 +284,21 @@ def purchase_virtual_coins(request):
         Transaction.objects.create(
             user=user,
             transaction_type='purchase',
-            amount=-cost,
-            balance_before=balance_before,
-            balance_after=user.balance,
-            description=f'购买{coin_amount}虚拟币'
+            amount=eth_cost,
+            balance_before=Decimal(str(eth_balance_before)),
+            balance_after=Decimal(str(eth_balance_after)),
+            description=f'用{eth_cost:.4f} ETH购买{coin_amount}虚拟币，交易哈希: {receipt.transactionHash.hex()[:10]}...'
         )
 
         return JsonResponse({
             'success': True,
             'message': f'成功购买{coin_amount}虚拟币',
-            'balance': float(user.balance),
-            'virtual_coins': user.virtual_coins
+            'eth_balance': user.eth_balance,
+            'virtual_coins': user.virtual_coins,
+            'tx_hash': receipt.transactionHash.hex()
         })
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': f'购买失败: {str(e)}'}, status=500)
 
 
 @csrf_exempt
@@ -299,8 +346,9 @@ def check_auth_status(request):
             'user': {
                 'id': request.user.id,
                 'username': request.user.username,
-                'balance': float(request.user.balance),
-                'virtual_coins': request.user.virtual_coins
+                'ganache_index': request.user.ganache_index,
+                'wallet_address': request.user.wallet_address,
+                'eth_balance': request.user.eth_balance
             }
         })
     else:
