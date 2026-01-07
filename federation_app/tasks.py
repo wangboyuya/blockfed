@@ -131,8 +131,13 @@ class DynamicFederation:
                     if self.handle.start_epoch > self.params['epochs']:
                         self.logger.info(f"任务 {self.task_id}: 达到最大训练轮数，停止训练")
                         self.is_training = False
+
+                        # 训练结束时保存最终模型
+                        self._save_final_model()
+
                         # 执行股份/奖金分配
                         self._distribute_rewards_or_shares()
+
                         # 更新数据库状态为已完成
                         self._update_task_status('completed')
                         break
@@ -167,6 +172,32 @@ class DynamicFederation:
         except Exception as e:
             self.logger.error(f"更新当前轮次失败: {e}")  # 使用任务专属logger
 
+    def _save_final_model(self):
+        """训练结束时保存最终模型"""
+        try:
+            import torch
+
+            # 确保保存目录存在
+            os.makedirs(self.handle.folder_path, exist_ok=True)
+
+            # 模型文件路径
+            model_path = os.path.join(self.handle.folder_path, "global_model.pth")
+
+            # 保存模型状态字典
+            torch.save({
+                'epoch': self.handle.start_epoch - 1,  # 当前已完成的轮次
+                'model_state_dict': self.handle.model.state_dict(),
+                'task_id': self.handle.task_id,
+                'task_name': self.handle.name
+            }, model_path)
+
+            self.logger.info(f"任务 {self.task_id}: 最终模型已保存到: {model_path}")
+
+        except Exception as e:
+            self.logger.error(f"任务 {self.task_id}: 保存最终模型失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+
     def _distribute_rewards_or_shares(self):
         """任务完成后分配股份或奖金"""
         try:
@@ -183,17 +214,37 @@ class DynamicFederation:
                 return
 
             # 转换为{user_id: contribution}格式
+            # 注意：contribution_data已经是最终的比例，我们需要实际贡献值
+            # 从contribution_records.json文件中读取
+            import json
+            contribution_file = os.path.join(
+                self.handle.folder_path,
+                'contribution_records.json'
+            )
+
             user_contributions = {}
-            for user_id_str, ratio in contribution_data.items():
-                try:
+            try:
+                with open(contribution_file, 'r', encoding='utf-8') as f:
+                    records = json.load(f)
+                    user_total_contributions = records.get('user_total_contributions', {})
+
+                    for user_id_str in contribution_data.keys():
+                        user_id = int(user_id_str)
+                        # 使用总贡献值，而不是比例
+                        total_contrib = user_total_contributions.get(str(user_id), 0)
+                        user_contributions[user_id] = total_contrib
+            except FileNotFoundError:
+                # 如果文件不存在，使用ratio作为contribution
+                self.logger.warning(f"任务 {self.task_id}: 贡献记录文件不存在，使用比例作为贡献值")
+                for user_id_str, ratio in contribution_data.items():
                     user_id = int(user_id_str)
-                    total_contribution = self.handle.contribution_manager.contribution_data.get(
-                        'user_total_contributions', {}
-                    ).get(str(user_id), 0)
-                    user_contributions[user_id] = total_contribution
-                except (ValueError, KeyError) as e:
-                    self.logger.error(f"解析用户{user_id_str}贡献度失败: {e}")
-                    continue
+                    user_contributions[user_id] = ratio
+            except Exception as e:
+                self.logger.error(f"读取贡献记录文件失败: {e}")
+                # 降级处理：使用比例
+                for user_id_str, ratio in contribution_data.items():
+                    user_id = int(user_id_str)
+                    user_contributions[user_id] = ratio
 
             # 根据支付模式执行不同的分配逻辑
             if task.payment_mode == 'shareholding':

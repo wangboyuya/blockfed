@@ -668,21 +668,24 @@
                 document.getElementById('loading').classList.add('hidden');
 
                 if (data.success) {
-                    // 更新虚拟币余额
-                    if (data.remaining_coins !== undefined) {
-                        window.userCoins = data.remaining_coins;
-                        document.getElementById('userCoins').textContent = data.remaining_coins;
-                        document.getElementById('modalUserCoins').textContent = data.remaining_coins;
+                    // 显示预测结果
+                    displayPredictionResult(data.prediction, data.payment);
+
+                    // 显示支付和分红信息
+                    let distributionInfo = '';
+                    if (data.payment && data.payment.distributions && data.payment.distributions.length > 0) {
+                        distributionInfo = '\n\n📊 分红详情:\n';
+                        data.payment.distributions.forEach(dist => {
+                            distributionInfo += `  • ${dist.shareholder_name}: ${dist.revenue_amount} ETH (${(dist.share_ratio * 100).toFixed(2)}%)\n`;
+                        });
                     }
 
-                    // 显示预测结果
-                    displayPredictionResult(data.prediction);
-
-                    // 显示扣费提示
-                    alert(`✅ 预测成功！\n已扣除 ${data.coins_charged || 10} 虚拟币\n剩余虚拟币: ${data.remaining_coins}`);
+                    alert(`✅ ${data.message || '预测成功！'}\n\n💰 支付: ${data.payment.usage_fee} ETH\n📍 交易哈希: ${data.payment.tx_hash.substring(0, 10)}...\n💳 剩余余额: ${data.payment.user_balance_after.toFixed(4)} ETH${distributionInfo}`);
                 } else {
-                    if (data.insufficient_coins) {
-                        alert(`❌ ${data.message}\n\n请前往个人中心充值或完成任务获取虚拟币。`);
+                    if (data.insufficient_eth) {
+                        alert(`❌ ${data.message}\n\n请前往个人中心充值ETH。`);
+                    } else if (data.model_offline) {
+                        alert(`❌ ${data.message}\n\n请等待任务完成训练并上线。`);
                     } else {
                         alert('❌ 预测失败: ' + data.message);
                     }
@@ -693,14 +696,42 @@
             }
         }
 
-        function displayPredictionResult(result) {
+        function displayPredictionResult(result, payment) {
             const resultDiv = document.getElementById('predictionResult');
 
+            let paymentHtml = '';
+            if (payment) {
+                paymentHtml = `
+                    <div style="background: rgba(0, 243, 255, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid var(--primary);">
+                        <h4 style="color: var(--primary); margin-bottom: 10px;">💰 支付信息</h4>
+                        <p><strong>使用费:</strong> ${payment.usage_fee} ETH</p>
+                        <p><strong>剩余余额:</strong> ${payment.user_balance_after.toFixed(4)} ETH</p>
+                        <p><strong>交易哈希:</strong> <code style="font-size: 11px;">${payment.tx_hash}</code></p>
+                        ${payment.distributions && payment.distributions.length > 0 ? `
+                            <hr style="border: none; border-top: 1px solid rgba(0, 243, 255, 0.2); margin: 10px 0;">
+                            <h5 style="color: var(--success); margin-top: 10px;">📊 股东分红 (${payment.distributions.length}位)</h5>
+                            <ul style="list-style: none; padding-left: 0;">
+                                ${payment.distributions.map(dist => `
+                                    <li style="padding: 5px 0;">
+                                        <span style="color: var(--text);">${dist.shareholder_name}</span>:
+                                        <span style="color: var(--success); font-weight: 600;">${dist.revenue_amount} ETH</span>
+                                        <span style="color: var(--text-secondary);">(${(dist.share_ratio * 100).toFixed(2)}% 股份)</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
             let html = `
-                <p><strong>预测类别:</strong> ${result.class_name} (ID: ${result.predicted_class})</p>
-                <p><strong>置信度:</strong> ${(result.confidence * 100).toFixed(2)}%</p>
-                <p><strong>所有类别概率:</strong></p>
-                <ul>
+                ${paymentHtml}
+                <div style="background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid rgba(126, 66, 255, 0.3);">
+                    <h4 style="color: var(--secondary); margin-bottom: 15px;">🎯 预测结果</h4>
+                    <p><strong>预测类别:</strong> ${result.class_name} (ID: ${result.predicted_class})</p>
+                    <p><strong>置信度:</strong> ${(result.confidence * 100).toFixed(2)}%</p>
+                    <p><strong>所有类别概率:</strong></p>
+                    <ul>
             `;
 
             // 按概率排序
@@ -715,7 +746,7 @@
                 html += `<li ${style}>${className}: ${percentage}%</li>`;
             });
 
-            html += '</ul>';
+            html += '</ul></div>';  // 闭合预测结果的 div
             resultDiv.innerHTML = html;
             document.getElementById('resultArea').classList.remove('hidden');
         }

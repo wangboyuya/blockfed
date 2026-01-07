@@ -36,7 +36,7 @@ batch_size: 128
 decay: 0.0005
 defence_method: ours
 dirichlet_alpha: 1
-epochs: 2000
+epochs: 5
 eta: 1
 is_poison: true
 local_epochs: 2
@@ -57,7 +57,7 @@ poison_client_num: 10
 poison_epochs: 6
 poison_lr: 0.005
 poison_rate: 0.5
-reward_pool: 0.0
+reward_pool: 100.0
 sampling_dirichlet: true
 seed: 1
 task_id: '2'

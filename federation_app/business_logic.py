@@ -197,7 +197,8 @@ class ShareManagementService:
                 print(f"转账给用户{user.username}失败: {e}")
                 continue
 
-        task.model_status = 'offline'
+        # 奖金分配完成后，模型也应该上线（可用于预测）
+        task.model_status = 'online'
         task.save()
 
         return distributions

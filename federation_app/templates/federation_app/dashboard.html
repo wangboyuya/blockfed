@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>联邦学习任务管理平台</title>
     <!-- 引入 ECharts -->
-    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- 备用CDN -->
+    <script>
+        // 如果主CDN加载失败，尝试备用CDN
+        if (typeof echarts === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"><\/script>');
+        }
+    </script>
     <style>
         :root {
             --primary: #00f3ff;
@@ -1221,6 +1228,13 @@
         }
 
         function drawAccuracyChart(accuracyHistory, taskName) {
+            // 检查echarts是否已加载
+            if (typeof echarts === 'undefined') {
+                showMessage('ECharts库加载失败，请刷新页面重试', 'error');
+                console.error('ECharts is not defined. Make sure the library is loaded.');
+                return;
+            }
+
             const chartDom = document.getElementById('accuracyChart');
             const myChart = echarts.init(chartDom);
             

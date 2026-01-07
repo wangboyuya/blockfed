@@ -240,8 +240,8 @@ def purchase_virtual_coins(request):
         if coin_amount <= 0:
             return JsonResponse({'success': False, 'error': '购买数量必须大于0'})
 
-        # 汇率：1 ETH = 1000 虚拟币
-        exchange_rate = 1000
+        # 汇率：1 ETH = 10 虚拟币
+        exchange_rate = 10
         eth_cost = Decimal(str(coin_amount / exchange_rate))
 
         user = request.user

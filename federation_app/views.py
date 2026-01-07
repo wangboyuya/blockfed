@@ -370,21 +370,9 @@ def get_logs(request):
 @csrf_exempt
 @login_required
 def predict_image(request):
-    """图像预测API - 需要支付10虚拟币"""
+    """图像预测API - 使用ETH支付并自动分红给股东"""
     if request.method == 'POST':
         try:
-            # 定义预测价格
-            PREDICTION_COST = 10
-
-            # 检查用户虚拟币余额
-            user = request.user
-            if user.virtual_coins < PREDICTION_COST:
-                return JsonResponse({
-                    'success': False,
-                    'message': f'虚拟币不足！需要{PREDICTION_COST}币，当前仅有{user.virtual_coins}币',
-                    'insufficient_coins': True
-                })
-
             # 检查是否有文件上传
             if 'image' not in request.FILES:
                 return JsonResponse({'success': False, 'message': '没有上传图像文件'})
@@ -392,9 +380,33 @@ def predict_image(request):
             image_file = request.FILES['image']
             task_id = request.POST.get('task_id')
             dataset_type = request.POST.get('dataset_type', 'CIFAR10')
+            user = request.user
 
             if not task_id:
                 return JsonResponse({'success': False, 'message': '任务ID不能为空'})
+
+            # 获取任务信息
+            try:
+                task = FederationTask.objects.get(task_id=task_id)
+            except FederationTask.DoesNotExist:
+                return JsonResponse({'success': False, 'message': f'任务 {task_id} 不存在'})
+
+            # 检查任务模型状态
+            if task.model_status != 'online':
+                return JsonResponse({
+                    'success': False,
+                    'message': f'模型未上线，当前状态: {task.get_model_status_display()}',
+                    'model_offline': True
+                })
+
+            # 检查用户ETH余额
+            usage_fee = float(task.usage_fee_per_request)
+            if user.eth_balance < usage_fee:
+                return JsonResponse({
+                    'success': False,
+                    'message': f'ETH余额不足！需要{usage_fee} ETH，当前余额{user.eth_balance:.4f} ETH',
+                    'insufficient_eth': True
+                })
 
             # 验证文件类型
             allowed_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
@@ -416,42 +428,48 @@ def predict_image(request):
                     destination.write(chunk)
 
             try:
-                # 先调用预测函数（预测失败会抛出异常）
-                result = run_model_prediction(temp_file_path, task_id, dataset_type)
+                # 先运行预测（预测失败不扣钱）
+                prediction_result = run_model_prediction(temp_file_path, task_id, dataset_type)
 
-                # 预测成功后，使用事务扣除虚拟币（确保原子性）
-                with transaction.atomic():
-                    # 重新获取用户对象（避免并发问题）
-                    user.refresh_from_db()
+                # 预测成功后，调用区块链分红系统
+                from .business_logic import ModelUsageService
 
-                    # 扣除虚拟币
-                    coins_before = user.virtual_coins
-                    user.virtual_coins -= PREDICTION_COST
-                    user.save()
+                # 转换预测结果为字符串
+                prediction_str = f"Class: {prediction_result.get('class_name', 'Unknown')} (ID: {prediction_result.get('predicted_class', -1)}), Confidence: {prediction_result.get('confidence', 0):.2f}%"
 
-                    # 创建交易记录
-                    from .models import Transaction
-                    Transaction.objects.create(
-                        user=user,
-                        transaction_type='model_usage',
-                        amount=Decimal('0.00'),
-                        balance_before=user.balance,
-                        balance_after=user.balance,
-                        description=f'模型预测服务费用 (任务ID: {task_id}) - 扣除{PREDICTION_COST}虚拟币，剩余{user.virtual_coins}虚拟币'
-                    )
+                # 调用付费和分红逻辑
+                payment_result = ModelUsageService.charge_and_distribute(
+                    task=task,
+                    user=user,
+                    prediction_result=prediction_str,
+                    input_hash=''
+                )
 
                 # 清理临时文件
                 os.remove(temp_file_path)
 
                 return JsonResponse({
                     'success': True,
-                    'prediction': result,
-                    'coins_charged': PREDICTION_COST,
-                    'remaining_coins': user.virtual_coins
+                    'prediction': prediction_result,
+                    'payment': {
+                        'usage_fee': payment_result['usage_fee'],
+                        'user_balance_after': payment_result['user_balance_after'],
+                        'tx_hash': payment_result['tx_hash'],
+                        'distributions': payment_result['distributions']
+                    },
+                    'message': f'预测成功！已支付{payment_result["usage_fee"]} ETH，分红已自动发放给{len(payment_result["distributions"])}位股东'
                 })
 
+            except ValueError as e:
+                # 余额不足或其他业务逻辑错误
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+                return JsonResponse({
+                    'success': False,
+                    'message': f'支付失败: {str(e)}'
+                })
             except Exception as e:
-                # 预测失败，不扣钱，只清理临时文件
+                # 其他错误（预测失败等）
                 if os.path.exists(temp_file_path):
                     os.remove(temp_file_path)
                 raise e
